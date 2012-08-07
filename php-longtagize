@@ -1,0 +1,139 @@
+#!/usr/bin/php -d short_open_tag=On
+
+<?php
+
+/*
+    PHP longtagizer - convert PHP short tags to long tags
+
+    Copyright (C) 2012 MIN marknadsbyrå AB
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+    -*- mode: php; tab-width: 4; indent-tabs-mode: nil -*-
+*/
+
+require_once "Console/Getopt.php";
+
+class App {
+
+    const _OPTSTRING = "i";
+
+    protected $_getopt = null;
+
+    public function __construct() {
+    	
+        $this->_getopt = new Console_Getopt();
+    }
+
+    public function run($argv) {
+
+        list($opts, $args) = $this->getopt($argv);
+
+        $use_stdin = !$args || empty($args[0]) || strcmp($args[0], "-") === 0;
+        $use_stdout = $use_stdin || !array_key_exists('i', $opts);
+
+        $infile = $use_stdin ? "php://stdin" : $args[0];
+        $outfile = $use_stdout ? "php://stdout" : $args[0];
+
+        $input = $this->read($infile);
+        $tokens = $this->parse($input);
+        $output = $this->transform($tokens);
+
+        $this->write($outfile, $output);
+    }
+
+    protected function getopt($argv) {
+
+        list($opts, $args) = $this->_getopt->getopt($argv, self::_OPTSTRING);
+
+        return array($this->hashify($opts), $args);
+    }
+
+    protected function hashify(array $array) {
+        $hash = array();
+
+        array_walk($array, function($pair) use(&$hash) {
+
+            list($key, $value) = $pair;
+            $hash[$key] = $value;
+        });
+
+        return $hash;
+    }
+
+    protected function read($file) {
+        
+        if ($content = file_get_contents($file)) {
+            return $content;
+        }
+
+        $this->bail("unable to read input");
+    }
+
+    protected function write($filename, $data) {
+        return file_put_contents($filename, $data);
+    }
+
+    protected function parse($input) {
+        return token_get_all($input);
+    }
+
+    protected function transform($tokens) {
+
+        $output = "";
+
+        foreach ($tokens as $token) {
+
+            if (is_array($token)) {
+
+                list($index, $code, $line) = $token;
+                switch($index) {
+                    
+                    case T_OPEN_TAG_WITH_ECHO:
+                        $output .= "<?php echo ";
+                        break;
+                    
+                    case T_OPEN_TAG:
+                        $output .= "<?php ";
+                        break;
+                    
+                    default:
+                        $output .= $code;
+                        break;
+                }
+
+            } else {
+
+                $output .= $token;
+            }
+        }
+
+        return $output;
+    }
+
+    protected function last_error_message() {
+        list($type, $message, $line, $file) = array_values(error_get_last());
+
+        return $message;
+    }
+
+    protected function bail($message) {
+        die("error: $message (" . $this->last_error_message() . ")\n");
+    }
+
+}
+
+ini_set('display_errors', false);
+$app = new App();
+$app->run($argv);
