@@ -1,0 +1,48 @@
+#!/usr/bin/env python
+
+import boto.ec2
+import boto.vpc
+import boto.rds
+
+class Instance(object):
+
+  def __init__(self, instance):
+
+    if type(instance) == boto.ec2.instance.Instance:
+      self.name = instance.tags['Name']
+      self.address = instance.private_ip_address
+    elif type(instance) == boto.rds.DBInstance:
+      self.name = instance.id
+      (self.address, _) = instance.endpoint or (None, None)
+    else:
+      raise ValueError('invalid instance type')
+
+
+def main(**kwargs):
+  ec2 = boto.ec2.connect_to_region(kwargs['region'])
+  vpc = boto.vpc.connect_to_region(kwargs['region'])
+  rds = boto.rds.connect_to_region(kwargs['region'])
+
+  instances = dict()
+
+  for instance in (i for i in ec2.get_only_instances() if not i.subnet_id is None):
+    subnet_instances = instances.get(instance.subnet_id, [])
+    subnet_instances.append(Instance(instance))
+    instances[instance.subnet_id] = subnet_instances
+
+  for instance in (i for i in rds.get_all_dbinstances() if not i.subnet_group is None):
+    for subnet_id in instance.subnet_group.subnet_ids:
+      subnet_instances = instances.get(subnet_id, [])
+      subnet_instances.append(Instance(instance))
+      instances[subnet_id] = subnet_instances
+
+  for subnet in vpc.get_all_subnets():
+    print 'subnet %s' % subnet.cidr_block
+
+    for instance in instances.get(subnet.id, []):
+      print '    %s (%s)' % (instance.name, instance.address)
+
+    print
+
+if __name__ == '__main__':
+  main(region='eu-west-1')
