@@ -1,0 +1,140 @@
+#!/bin/sh
+
+NAME="$1"
+TYPE="$2"
+VERSION="0.1.0"
+
+if [ -z "$NAME" -o -z "$TYPE" ]; then
+  echo "usage: $(basename $0) <name> <type>" >&2
+  echo "       type: yeoman, generic"
+  exit 1
+fi
+
+if [ "$TYPE" != "yeoman" -a "$TYPE" != "generic" ]; then
+  echo "warning: unknown project type, falling back to 'generic'"
+  TYPE="generic"
+fi
+
+cat <<SUMMARY
+Name: $NAME
+Type: $TYPE
+
+If OK, press enter (otherwise, CTRL-C). 
+SUMMARY
+
+read
+
+BUNDLER=$(which bundle)
+GIT=$(which git)
+NPM=$(which npm)
+BOWER=$(which bower)
+
+if [ -z "$BUNDLER" ]; then
+  echo "bundler missing from PATH, please install" >&2
+  exit 2
+fi
+
+if [ -z "$GIT" ]; then
+  echo "git missing from PATH, please install" >&2
+  exit 2
+fi
+
+if [ "$TYPE" = "yeoman" -a -z "$NPM" ]; then
+  echo "npm missing from PATH, please install" >&2
+  exit 2
+fi
+
+if [ "$TYPE" = "yeoman" -a -z "$BOWER" ]; then
+  echo "bower missing from PATH, please install" >&2
+  exit 2
+fi
+
+if [ -e "$NAME" ]; then
+  echo "error: file or directory '$NAME' already exists in this directory. Please move or delete." >&2
+  exit 3
+fi
+
+mkdir "$NAME" || (echo "error: can't create directory here" >&2; exit 4)
+cd "$NAME"
+
+mkdir -p conf htdocs
+touch conf/.gitkeep
+echo "$NAME" > README.md
+
+cat <<GEMFILE > Gemfile
+source "https://rubygems.org"
+
+group :development do
+  gem "capistrano", "2.15.5"
+  gem "railsless-deploy"
+end
+GEMFILE
+
+cat <<CAPFILE > Capfile
+require "rubygems"
+require "bundler/setup"
+
+require "railsless-deploy"
+load "deploy" if respond_to?(:namespace)
+
+set :application, "$NAME"
+
+# ===================================
+task :staging do
+  role :web, "#{application}.staging.minmb.se"
+  set :user, "deploy"
+  set :deploy_to, "/var/#{user}/staging/#{application}"
+  set :deploy_via, :remote_cache
+end
+
+set :scm, "git"
+set :repository, "git@git.minmb.se:#{application}.git"
+set :branch, fetch(:branch, "master")
+set :git_enable_submodules, 1
+default_run_options[:pty] = true
+ssh_options[:forward_agent] = true
+set :use_sudo, false
+CAPFILE
+
+cat <<GITIGNORE > .gitignore
+.DS_Store
+conf/*
+!.gitkeep
+GITIGNORE
+
+if [ "$TYPE" = "yeoman" ]; then
+
+cat <<PACKAGEJSON > package.json
+{
+  "name": "$NAME",
+  "version": "$VERSION",
+  "private": true,
+  "repository" : { 
+    "type" : "git", 
+    "url" : "git://git.minmb.se/$NAME.git"
+  }
+}
+PACKAGEJSON
+
+$NPM install -l grunt --save-dev
+
+cat <<BOWERJSON > bower.json
+{
+  "name": "$NAME",
+  "version": "$VERSION",
+  "private": true
+}
+BOWERJSON
+
+echo node_modules >> .gitignore
+
+fi
+
+echo "2.1.0" > .ruby-version
+echo "$NAME" > .ruby-gemset
+cd .
+
+$GIT init
+$GIT remote add origin git@git.minmb.se:$NAME.git
+$GIT add .
+$GIT commit -m "initial project structure"
