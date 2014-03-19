@@ -1,5 +1,4 @@
 #!/usr/bin/env php -d short_open_tag=On -d error_reporting=30719
-
 <?php
 
 /*
