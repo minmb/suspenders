@@ -1,4 +1,4 @@
-#!/usr/bin/php -d short_open_tag=On
+#!/usr/bin/env php -d short_open_tag=On
 
 <?php
 
