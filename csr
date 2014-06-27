@@ -1,0 +1,66 @@
+#!/usr/bin/env ruby
+
+require 'openssl'
+require 'highline/import'
+
+module Builder
+  class << self
+    
+    include OpenSSL
+    
+    def key(size)
+      PKey::RSA.new(size)
+    end
+    
+    def request(domain, country, state, city, organization, organizational_unit, wildcard: false, **extra)
+      request = X509::Request.new
+      request.subject = X509::Name.new([
+        ['C', country],
+        ['ST', state],
+        ['L', city],
+        ['O', organization],
+        ['OU', organizational_unit],
+        ['CN', wildcard ? "*.#{domain}" : domain],
+        *extra
+      ])
+      
+      if wildcard
+        extensions = ASN1::Set([ASN1::Sequence([subject_alt_name(domain)])])
+        request.add_attribute(X509::Attribute.new('extReq', extensions))
+        request.add_attribute(X509::Attribute.new('msExtReq', extensions))
+      end
+      
+      request
+    end
+    
+    def subject_alt_name(*domains)
+      ef = X509::ExtensionFactory.new
+      ef.create_extension('subjectAltName', domains.map { |d| "DNS:#{d}" }.join(','))
+    end
+    
+  end
+end
+
+def main
+  domain = ask('Domain: ')
+  country = ask('Country: ')
+  state = ask('State: ')
+  city = ask('City: ')
+  organization = ask('Organization: ')
+  organizational_unit = ask('Organizational unit: ')
+  
+  key = Builder.key(2048)
+  request = Builder.request(domain, country, state, city, organization, organizational_unit, wildcard: true)
+  request.public_key = key.public_key
+  request.sign(key, OpenSSL::Digest::SHA1.new)
+  
+  puts
+  say("<%= color('RSA private key:', BOLD) %>")
+  puts key
+  
+  puts
+  say("<%= color('Certificate Signing Request:', BOLD) %>")
+  puts request
+end
+
+main if __FILE__ == $0
