@@ -1,0 +1,42 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+import sys
+from subprocess import call
+
+def parse_record(record):
+  _, kind, name, value, ttl, _, state, _ = map(str.strip, record.split('\t'))
+
+  if kind == 'TXT' or kind == 'SPF':
+    value = '"%s"' % value
+
+  return (kind, name, value, ttl, state)
+
+def parse_records(input):
+  records = dict()
+
+  for record in input.readlines():
+    kind, name, value, ttl, state = parse_record(record)
+
+    if kind != 'NS' and kind != 'SOA' and state == 'Active':
+      key = ';'.join([name, kind])
+
+      if key in records:
+        _, _, oldvalue, _ = records[key]
+        value = ','.join([oldvalue, value])
+
+      records[key] = (kind, name, value, ttl)
+
+  for key, record in records.iteritems():
+    yield record
+
+def main():
+  if len(sys.argv) < 2:
+    print("usage: plesk-route53 [zone]", file=sys.stderr)
+    sys.exit(1)
+
+  for kind, name, value, ttl in parse_records(sys.stdin):
+    call(['route53', 'add_record', sys.argv[1], name, kind, value, ttl])
+
+if __name__ == '__main__':
+  main()
