@@ -5,7 +5,7 @@ import sys
 from subprocess import call
 
 def parse_record(record):
-  _, kind, name, value, ttl, _, state, _ = map(str.strip, record.split('\t'))
+  kind, name, value, ttl, _, state, _ = map(str.strip, record.strip().split('\t'))
 
   if kind == 'TXT' or kind == 'SPF':
     value = '"%s"' % value
@@ -15,7 +15,7 @@ def parse_record(record):
 def parse_records(input):
   records = dict()
 
-  for record in input.readlines():
+  for record in filter(lambda r: not r.isspace(), input.readlines()):
     kind, name, value, ttl, state = parse_record(record)
 
     if kind != 'NS' and kind != 'SOA' and state == 'Active':
